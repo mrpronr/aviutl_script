@@ -1,0 +1,95 @@
+--track0:幅,0,1920,640
+--track1:高さ,0,1080,360
+--track2:円み,0,50,10
+--track3:速度,0,30,2
+--check0:き向逆,0
+
+width = obj.track0
+height = obj.track1
+radius = obj.track2
+velocity = obj.frame * obj.track3
+length = 2*width + 2*height
+
+-- 文字の間隔
+space = -(length / obj.num)
+
+-- 文字の順番を右から左に
+if (obj.check0) then
+    space = -space
+end
+
+now = (space * obj.index) % length
+next = (now + velocity) % length
+
+-- 左辺
+if (next < height) then
+    obj.ox = 0
+    obj.oy = next
+    -- 左上の左下
+    if (obj.oy < radius) then
+        obj.rz = calcAngle(next, 0, radius, 0, false)
+    -- 左下の左上
+    elseif (obj.oy > (height - radius)) then
+        obj.rz = calcAngle(next, height, radius, 270, true)
+    else
+        obj.rz = 270
+    end
+-- 下辺
+elseif (next < height + width) then
+    obj.ox = next - height
+    obj.oy = height
+    -- 左下の右下
+    if (obj.ox < radius) then
+        obj.rz = calcAngle(next, height, radius, 270, false)
+    -- 右下の左下
+    elseif (obj.ox > width - radius) then
+        obj.rz = calcAngle(next, width + height, radius, 180, true)
+    else
+        obj.rz = 180
+    end
+-- 右辺
+elseif (next < height + width + height) then
+    obj.ox = width
+    obj.oy = height - (next - width - height)
+    -- 右下の右上
+    if (obj.oy > height - radius) then
+        obj.rz = calcAngle(next, width + height, radius, 180, false)
+    -- 右上の右下
+    elseif (obj.oy < radius) then
+        obj.rz = calcAngle(next, width + 2*height , radius, 90, true)
+    else
+        obj.rz = 90
+    end
+-- 上辺
+else
+    obj.ox = width - (next - height - width - height)
+    obj.oy = 0
+    -- 右上の左上
+    if (obj.ox > width - radius) then
+        obj.rz = calcAngle(next, width + 2*height, radius, 90, true)
+    -- 左上の右上
+    elseif (obj.ox < radius) then
+        obj.rz = calcAngle(next, 2*width + 2*height , radius, 0, false)
+    else
+        obj.rz = 0
+    end
+end
+
+-- 角での角度を計算する。
+-- @param lengthLetter 文字の距離
+-- @param lengthTarget 左上の頂点から半時計周りに角までの長さ
+-- @param radius 円みの半径
+-- @param angle 曲がる前の辺上での角度
+-- @param isStart 曲げ始めか
+-- @return 角度
+function calcAngle(lengthLetter, lengthTarget, radius, angle, isStart)
+    if (isStart) then
+        l = lengthLetter - (lengthTarget - radius)
+        ratio = l / (2*radius)
+    else
+        l = lengthLetter - lengthTarget
+        ratio = (l + radius) / (2*radius)
+    end
+
+    return angle - 90 * ratio
+end
