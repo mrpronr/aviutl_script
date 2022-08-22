@@ -2,7 +2,94 @@
 --track1:縁の太さ,1,50,5
 --track2:角度,0,359,90
 --track3:曲面閾値,0,359,10
---dialog:頂点閾値,local apexThreshold=3;
+--check0:拡張面表示,0
+--dialog:頂点閾値,local apexThreshold=3;輪郭番号表示/chk,local displayOutlineNo=0;外枠:1 内枠:2,local outOrIn={};デバッグ用,local debugno=0;
+
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
+
+debug_print("===================")
+debug_print("== スクリプト開始 ==")
+debug_print("===================")
+
+-- 一次元配列用
+-- @param a 一次元配列
+-- @param name 配列名
+local function debugPrintArray(a, name)
+    debug_print("== debugPrintArray("..name..") ↓ ==")
+    for i = 1, #a do
+        debug_print("i="..i..", value="..a[i])
+    end
+    debug_print("== debugPrintArray("..name..") ↑ ==")
+end
+
+-- 二次元配列用
+-- @param a 二次元配列
+local function debugPrintNestedArray(a)
+    debug_print("== debugPrintNestedArray() ↓ ==")
+    for i = 1, #a do
+        for j = 1, #a[i] do
+            debug_print("i="..i..", j="..j..", value="..a[i][j])
+        end
+    end
+    debug_print("== debugPrintNestedArray() ↑ ==")
+end
+
+-- 輪郭情報
+-- @param outlines 輪郭[[x0, y0, x1, y1, x2, y2, ...], [], ...]
+-- @param name 輪郭名
+function debugPrintOutlines(outlines, name)
+    debug_print("== 輪郭座標（"..name.."）↓ ==")
+    for i = 1, #outlines do
+        local n = #outlines[i]
+        for j = 1, n / 2 do
+            debug_print("i="..i..", j="..j..", x="..outlines[i][j*2-1]..", y="..outlines[i][j*2])
+        end
+    end
+    debug_print("== 輪郭座標（"..name.."）↑ ==")
+end
+
+-- 辺情報
+-- @param lines 辺[{x0, y0, x1, y1}, {}, ...]
+local function debugPrintAndDrawLineDetection(lines)
+    debug_print("== 辺座標 ↓ ==")
+    obj.setfont("ＭＳ ゴシック", 14, 0, "0xff0000")
+    local yyy = 15
+    debug_print("#lines="..#lines)
+    for i = 1, #lines do
+        local x = lines[i].x0
+        local y = lines[i].y0
+        obj.load("text", i)
+        obj.draw(x, y)
+        obj.load("text", string.format("%.2f", x))
+        obj.draw(x, y + yyy)
+        obj.load("text", string.format("%.2f", y))
+        obj.draw(x, y + yyy * 2)
+        debug_print("i="..i..", x="..x..", y="..y)
+    end
+    debug_print("== 辺座標 ↑ ==")
+end
+
+-- 辺情報
+-- @param lines 辺[{x0, y0, x1, y1}, {}, ...]
+-- @param name 配列名
+local function debugPrintLines(lines, name)
+    debug_print("== 辺座標（"..name.."）↓ ==")
+    local n = #lines
+    debug_print("[debugSides()]n="..n)
+    for i = 1, n do
+        local edge = lines[i]
+        local x = edge.x0
+        local y = edge.y0
+        debug_print("x0="..x..", y0="..y)
+    end
+    debug_print("== 辺座標（"..name.."）↑ ==")
+end
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================
 
 local distance = obj.track0
 local edgeWeight = obj.track1
@@ -20,261 +107,125 @@ local baseY = obj.oy
 
 require("rikky_module")
 
---table 各輪郭の座標データ {{x0,y0,x1,y1,x2,y2,....},{...},...}の形式
---table 各輪郭の点の数 {n0,n1,n2,...}の形式
---number 輪郭の数
 -- 輪郭情報
 pointsEachOutlines, numPointsEachOutlines, numOutlines = rikky_module.bordering()
 
 -- 辺情報
-edges, numEdges = rikky_module.linedetection(100)
+lines, numLines = rikky_module.linedetection(100)
 
--- デバッグ用
-local function debugPoints()
-    obj.setfont("ＭＳ ゴシック", 20, 0, "0xff0000")
-    local yyy = 15
-    for i = 1, table.getn(edges) do
-        local x = edges[i].x0
-        local y = edges[i].y0
-        obj.load("text", "i="..i)
-        obj.draw(x, y)
-        obj.load("text", "x="..string.format("%.2f", x))
-        obj.draw(x, y + yyy)
-        obj.load("text", "y="..string.format("%.2f", y))
-        obj.draw(x, y + yyy * 2)
-    end
-end
---debugPoints()
+-- 辺の終点を近隣の辺の始点の値に設定
+-- {{x0, y0, x1, y1},{},...}
+local correctedLines = {}
 
-------------
---
--- 始点情報矯正 ここから
---
-------------
-
--- {[{index, value},{},...],[],...}
-local xs = {}
-local ys = {}
-local correctionThreshold = 2
-
-local xs1 = {}
-table.insert(xs1, {index = 1, value = edges[1].x0})
-table.insert(xs, xs1)
-local ys1 = {}
-table.insert(ys1, {index = 1, value = edges[1].y0})
-table.insert(ys, ys1)
-
-for i = 2, numEdges do
-    local edge = edges[i]
-    local alreadyGroupingX = false
-    local alreadyGroupingY = false
-
-    -- x座標のグループ分け
-    for j = 1, table.getn(xs) do
-        local xv = xs[j][1].value
-        if (math.abs(xv - edge.x0) <= 2) then
-            table.insert(xs[j], {index = i, value = edge.x0})
-            alreadyGroupingX = true
-        end
-    end
-
-    -- 新しいグループを作成する。
-    if (alreadyGroupingX == false) then
-        local xsi = {}
-        table.insert(xsi, {index = i, value = edge.x0})
-        table.insert(xs, xsi)
-    end
-
-    -- y座標のグループ分け
-    for j = 1, table.getn(ys) do
-        local yv = ys[j][1].value
-        if (math.abs(yv - edge.y0) <= 2) then
-            table.insert(ys[j], {index = i, value = edge.y0})
-            alreadyGroupingY = true
-        end
-    end
-
-    -- 新しいグループを作成する。
-    if (alreadyGroupingY == false) then
-        local ysi = {}
-        table.insert(ysi, {index = i, value = edge.y0})
-        table.insert(ys, ysi)
-    end
-end
-
-local function debugPrintGroups()
-    debug_print("== xs ==")
-    for i = 1, table.getn(xs) do
-        for j = 1, table.getn(xs[i]) do
-            debug_print("xs["..i.."]["..j.."].index="..xs[i][j].index..", value="..xs[i][j].value)
-        end
-    end
-    debug_print("== ys ==")
-    for i = 1, table.getn(ys) do
-        for j = 1, table.getn(ys[i]) do
-            debug_print("ys["..i.."]["..j.."].index="..ys[i][j].index..", value="..ys[i][j].value)
-        end
-    end
-end
-debugPrintGroups()
-
--- グループ分けした値を平均する。
-local xsa = {}
-local ysa = {}
-
-for i = 1, table.getn(xs) do
-    local n = 0
-    local sum = 0
-    for j = 1, table.getn(xs[i]) do
-        sum = sum + xs[i][j].value
-        n = n + 1
-    end
-    local ave = sum / n
-    xsaa = {}
-    for j = 1, table.getn(xs[i]) do
-        local xsiaa = {index = xs[i][j].index, value = ave}
-        table.insert(xsaa, xsiaa)
-    end
-    table.insert(xsa, xsaa)
-end
-
--- グループ分けした値を平均する。
-for i = 1, table.getn(ys) do
-    local n = 0
-    local sum = 0
-    for j = 1, table.getn(ys[i]) do
-        sum = sum + ys[i][j].value
-        n = n + 1
-    end
-    local ave = sum / n
-    ysaa = {}
-    for j = 1, table.getn(ys[i]) do
-        local ysiaa = {index = ys[i][j].index, value = ave}
-        table.insert(ysaa, ysiaa)
-    end
-    table.insert(ysa, ysaa)
-end
-
-local function debugPrintAveragedGroups()
-    debug_print("== xsa ==")
-    for i = 1, table.getn(xsa) do
-        for j = 1, table.getn(xsa[i]) do
-            debug_print("xsa["..i.."]["..j.."].index="..xsa[i][j].index..", value="..xsa[i][j].value)
-        end
-    end
-    debug_print("== ysa ==")
-    for i = 1, table.getn(ysa) do
-        for j = 1, table.getn(ysa[i]) do
-            debug_print("ysa["..i.."]["..j.."].index="..ysa[i][j].index..", value="..ysa[i][j].value)
-        end
-    end
-end
-debugPrintAveragedGroups()
-
--- 辺テーブルに詰めなおす
--- [{x0, y0, x1, y1},{},...]
-local correctedEdges = {}
-
-local function makeEdges()
-    for i = 1, table.getn(xsa) do
-        for j = 1, table.getn(xsa[i]) do
-            local xIndex = xsa[i][j].index
-            local x0 = xsa[i][j].value
-            local yIndex = 0
-            local y0 = 0
-            for k = 1, table.getn(ysa) do
-                for l = 1, table.getn(ysa[k]) do
-                    yIndex = ysa[k][l].index
-                    if (xIndex == yIndex) then
-                        y0 = ysa[k][l].value
-                        goto breakY
-                    end
-                end
-            end
-            ::breakY::
-            local edge = edges[xIndex]
-            local x1 = edge.x1
-            local y1 = edge.y1
-            table.insert(correctedEdges, {x0 = x0, y0 = y0, x1 = x1, y1 = y1})
-        end
-    end
-end
-makeEdges()
-
-local function debugPrintCorrectedEdges()
-    debug_print("== correctedEdges("..table.getn(correctedEdges)..") ==")
-    for i = 1, table.getn(correctedEdges) do
-        debug_print("["..i.."]x0="..correctedEdges[i].x0..", y0="..correctedEdges[i].y0..", x1="..correctedEdges[i].x1..", y1="..correctedEdges[i].y1)
-    end
-end
-debugPrintCorrectedEdges()
-
-------------
---
--- 始点情報矯正 ここまで
---
-------------
-
--- 側面テーブル
--- {{x0, y0, x1, y1, x2, y2, x3, x4, da},{},...}
-local sides = {}
-local numSides = 0
-
-for i = 1, numEdges do
-    local origin = correctedEdges[i]
+for i = 1, numLines do
+    local origin = lines[i]
     local x0, y0 = origin.x0, origin.y0
     local x1, y1 = origin.x1, origin.y1
 --    debug_print("x0:"..x0..", y0:"..y0..", x1:"..x1..", y1:"..y1)
 
-    for j = 1, numEdges do
+    for j = 1, numLines do
         if (i == j) then
             goto continue
         end
 
-        local dest = correctedEdges[j]
+        local dest = lines[j]
         local x2, y2 = dest.x0, dest.y0
         local x3, y3 = dest.x1, dest.y1
 --        debug_print("x2:"..x2..", y2:"..y2..", x3:"..x3..", y3:"..y3)
 
-        -- おそらく輪郭の各辺の始点と終点は反時計回りに沿う形で取得できる。
-        -- つまり、必ず始点と終点が重なり、始点同士・終点同士が重なることはない。多分…。
+        -- おそらく各辺の始点と終点は輪郭の反時計回りに沿う形で取得できる。
+        -- つまり、始点同士・終点同士が重なることはない。多分…。
+--        debug_print("dx="..math.abs(x1 - x2))
+--        debug_print("dy="..math.abs(y1 - y2))
         if ((math.abs(x1 - x2) < apexThreshold) and (math.abs(y1 - y2) < apexThreshold)) then
+--            debug_print("kkkkk")
             local angleOrigin = math.deg(math.atan2(y1 - y0, x1 - x0))
             local angleDest = math.deg(math.atan2(y3 - y2, x3 - x2))
-
             local da = math.abs(angleOrigin - angleDest) % 360
 
-            local t = {
-                x0 = x0, y0 = y0
-                , x1 = x2, y1 = y2
-                , x2 = distance * math.cos(radius) + x2, y2 = distance * math.sin(radius) + y2
-                , x3 = distance * math.cos(radius) + x0, y3 = distance * math.sin(radius) + y0
-                , da = da
+            correctedLines[i] = {
+                x0 = x0
+                , y0 = y0
+                , x1 = x2
+                , y1 = y2
             }
-            sides[i] = t
-            numSides = numSides + 1
 
             break
         end
         ::continue::
     end
+--    debugPrintLines(correctedLines, "correctedLines")
 end
 
-local function debugPrintOriginalDrawingOrder()
-    local n = table.getn(sides)
-    debug_print("[debugPrintOriginalDrawingOrder()]n="..n)
-    for i = 1, table.getn(sides) do
-        local side = sides[i]
+-- 辺を輪郭に変換
+-- [[x0, y0, x1, y1, ...],[],...]
+local rinnkaku = {}
 
-        obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
-        local x = side.x0
-        local y = side.y0
-        obj.load("text", i.."["..i.."]")
-        obj.draw(x, y)
+local function transLineToOutline()
+    local dupLines = {}
+    for i = 1, #correctedLines do
+        table.insert(dupLines, correctedLines[i])
+    end
+
+    local outlines = {}
+    local removingIndexes = {}
+
+    -- 辺の始点を輪郭配列に追加する再帰関数
+    -- @param first なんちゅーの 分かってくれよ
+    -- @param index 辺のインデックス
+    local function addStartPoints(first, index)
+        -- 1周したら
+        if (first == false and index == #dupLines) then
+            return
+        end
+
+        local origin = dupLines[index]
+
+        for i = 1, #dupLines do
+            local dest = dupLines[i]
+            if (origin.x0 == dest.x1 and origin.y0 == dest.y1) then
+                addStartPoints(false, i)
+                table.insert(outlines, origin.x0)
+                table.insert(outlines, origin.y0)
+                table.insert(removingIndexes, i)
+                break
+            end
+        end
+    end
+
+    while true do
+        local n = #dupLines
+
+        if (n == 0) then
+            break
+        end
+
+        addStartPoints(true, n)
+
+        table.insert(rinnkaku, outlines)
+
+        -- 輪郭にした辺を削除
+--        debugPrintArray(outlines, "outlines")
+--        debugPrintArray(removingIndexes, "removingIndexes")
+--        debugPrintLines(dupLines, "dupLines")
+        for i = #removingIndexes, 1, -1 do
+            local index = table.remove(removingIndexes)
+            table.remove(dupLines, index)
+            for j = 1, #removingIndexes do
+                if (removingIndexes[j] > index) then
+                    removingIndexes[j] = removingIndexes[j] - 1
+                end
+            end
+        end
+--        debugPrintArray(removingIndexes, "removingIndexes")
+--        debugPrintLines(dupLines, "dupLines")
+
+        outlines = {}
     end
 end
---debugPoints()
---debugPrintOriginalDrawingOrder()
+transLineToOutline()
+
+debugPrintOutlines(rinnkaku, "rinnkaku")
 
 -- @param t テーブル
 -- @param p インサート位置
@@ -282,127 +233,110 @@ end
 local function insert(t, p, v)
     local temp = {}
     -- pop
-    for i = table.getn(t), p, -1 do
+    for i = #t, p, -1 do
         table.insert(temp, table.remove(t))
     end
     table.insert(t, v)
     -- push
-    for i = table.getn(temp), 1, -1 do
+    for i = #temp, 1, -1 do
         table.insert(t, temp[i])
     end
 end
 
-local function debugPrintTable(t)
-    for i = 1, table.getn(t) do
-        debug_print(i..":"..t[i])
-    end
-end
+-- 側面描画順2
+-- [{index = number, order = [n1, n2, n3, ...]}, {}, ...]
+local drawingOrder2 = {}
+local function lsls()
 
--- 側面描画順
-local drawingOrder = {}
-local function jjj()
-    local reverseOrder = {1}
+    -- @param rnkk 輪郭[x0, y0, x1, y1, ...]
+    -- @return 順番[n1, n2, n3, ...]
+    local function sortDrawingOrder(rnkk)
+        -- [{i, r}, {}, ...]
+        local rs = {}
 
-    for i = 2, numSides do
-        local insertPoint = 1
-        local sideI = sides[i]
-
-        for j = table.getn(reverseOrder) + 1, 2, -1 do
-            local sideJ = sides[reverseOrder[j - 1]]
-            -- 右下->左上
---            if (angle < 45) then
---                if (sideJ.x0 < sideI.x0) then
---                    insertPoint = j
---                    break
---                elseif (sideJ.x0 == sideI.x0 and sideJ.y0 < sideI.y0) then
---                    insertPoint = j
---                    break
---                end
-            -- 下右->上左
-            if (angle < 90) then
-                if (sideJ.y0 < sideI.y0) then
-                    insertPoint = j
-                    break
-                elseif (sideJ.y0 == sideI.y0 and sideJ.x0 < sideI.x0) then
-                    insertPoint = j
-                    break
-                end
-            -- 下左->上右
---            elseif (angle < 135) then
---                if (sideJ.y0 < sideI.y0) then
---                    insertPoint = j
---                    break
---                elseif (sideJ.y0 == sideI.y0 and sideJ.x0 > sideI.x0) then
---                    insertPoint = j
---                    break
---                end
-            -- 左下->右上
-            elseif (angle < 180) then
-                if (sideJ.x0 > sideI.x0) then
-                    insertPoint = j
-                    break
-                elseif (sideJ.x0 == sideI.x0 and sideJ.y0 < sideI.y0) then
-                    insertPoint = j
-                    break
-                end
-            -- 左上->右下
---            elseif (angle < 225) then
---                if (sideJ.x0 > sideI.x0) then
---                    insertPoint = j
---                    break
---                elseif (sideJ.x0 == sideI.x0 and sideJ.y0 > sideI.y0) then
---                    insertPoint = j
---                    break
---                end
-            -- 上左->下右
-            elseif (angle < 270) then
-                if (sideJ.y0 > sideI.y0) then
-                    insertPoint = j
-                    break
-                elseif (sideJ.y0 == sideI.y0 and sideJ.x0 > sideI.x0) then
-                    insertPoint = j
-                    break
-                end
-            -- 上右->下左
---            elseif (angle < 315) then
---                if (sideJ.y0 > sideI.y0) then
---                    insertPoint = j
---                    break
---                elseif (sideJ.y0 == sideI.y0 and sideJ.x0 < sideI.x0) then
---                    insertPoint = j
---                    break
---                end
-            -- 右上->左下
-            elseif (angle < 360) then
-                if (sideJ.x0 < sideI.x0) then
-                    insertPoint = j
-                    break
-                elseif (sideJ.x0 == sideI.x0 and sideJ.y0 < sideI.y0) then
-                    insertPoint = j
-                    break
-                end
+        for i = 1, #rnkk / 2 do
+            local x, y, r
+            if (0 <= radius and radius < math.pi * (1/2)) then
+                -- 0～90度の場合、各座標を原点の右下にシフト
+                x = rnkk[i * 2 - 1]
+                y = rnkk[i * 2]
+            elseif (math.pi * (1/2) <= radius and radius < math.pi) then
+                -- 90～180度の場合、各座標を原点の左下にシフト
+                x = rnkk[i * 2 - 1] - w
+                y = rnkk[i * 2]
+            elseif (math.pi <= radius and radius < math.pi * (3/2)) then
+                -- 180～270度の場合、各座標を原点の左上にシフト
+                x = rnkk[i * 2 - 1] - w
+                y = rnkk[i * 2] - h
+            elseif (math.pi * (3/2) <= radius and radius < math.pi * 2) then
+                -- 270～360度の場合、各座標を原点の右上にシフト
+                x = rnkk[i * 2 - 1]
+                y = rnkk[i * 2] - h
             end
+            r = math.sqrt(x * x + y * y)
+            table.insert(rs, {i = i, r = r})
         end
 
-        insert(reverseOrder, insertPoint, i)
+        for i = 1, #rs do
+            debug_print("rs:"..rs[i].i..","..rs[i].r)
+        end
+
+        -- 原点から遠い順に描画順を設定
+        table.sort(
+            rs
+            , function(a, b)
+                return a.r > b.r
+            end
+        )
+
+        local order = {}
+        for i = 1, #rs do
+            table.insert(order, rs[i].i)
+        end
+
+        return order
     end
 
-    for i = 1, table.getn(reverseOrder) do
-        table.insert(drawingOrder, table.remove(reverseOrder))
+    local numOutOrIn = #outOrIn
+    local numRinnkaku = #rinnkaku
+    if (numOutOrIn == 0) then
+        -- 順番考慮なし
+        debug_print("順番考慮なし")
+        for i = 1, numRinnkaku do
+            table.insert(drawingOrder2, {
+                index = i
+                , order = sortDrawingOrder(rinnkaku[i])
+            })
+        end
+    elseif (numOutOrIn == numRinnkaku) then
+        -- 順番考慮あり（内側->外側）
+        debug_print("順番考慮あり（内側->外側）")
+        for i = 1, numRinnkaku do
+            if (outOrIn[i] == 2) then
+                table.insert(drawingOrder2, {
+                    index = i
+                    , order = sortDrawingOrder(rinnkaku[i])
+                })
+            end
+        end
+        for i = 1, numRinnkaku do
+            if (outOrIn[i] == 1) then
+                table.insert(drawingOrder2, {
+                    index = i
+                    , order = sortDrawingOrder(rinnkaku[i])
+                })
+            end
+        end
     end
 end
+lsls()
 
-jjj()
-
-for i = 1, table.getn(drawingOrder) do
-    debug_print(i..":"..drawingOrder[i])
+-- drawingOrder2 = [{index = number, order = [n1, n2, n3, ...]}, {}, ...]
+for i = 1, #drawingOrder2 do
+    for j = 1, #drawingOrder2[i].order do
+        debug_print("index="..drawingOrder2[i].index..", order["..j.."]="..drawingOrder2[i].order[j])
+    end
 end
-
---debug_print(numSides)
---for i = 1, numSides do
---    local side = sides[i]
---    debug_print(side.x0..","..side.y0..","..side.x1..","..side.y1..","..side.x2..","..side.y2..","..side.da)
---end
 
 -- 基準面_縁取り
 local function drawBaseEdge()
@@ -417,70 +351,72 @@ local function drawBaseEdge()
     end
 end
 
--- 側面
-local function drawSide()
-    obj.load("figure", "四角形", "0x00aaaa")
+--drawBaseEdge()
 
-    for i = 1, numSides do
-        local side = sides[i]
-
-        obj.drawpoly(
-            side.x0, side.y0, 0
-            , side.x1, side.y1, 0
-            , side.x2, side.y2, 0
-            , side.x3, side.y3, 0
-        )
-    end
-end
+--jjj()
 
 -- 縁取り_基準面と拡張面を繋ぐ辺
-local function drawSideEdge()
-    obj.load("figure", "円", "0xffffff", edgeWeight)
-
-    for i = 1, numSides do
-        local side = sides[i]
-
-        if (side.da < angleThreshold) then
-            goto continue
-        end
-
-        for j = 0, distance do
-            obj.ox = ((side.x2 - side.x1) * j / distance) + side.x1
-            obj.oy = ((side.y2 - side.y1) * j / distance) + side.y1
-            obj.draw()
-        end
-
-        ::continue::
-    end
-end
 
 local function drawSide2()
-    for i = 1, table.getn(drawingOrder) do
-        -- 面
-        obj.load("figure", "四角形", "0x00aa00")
+    for i = 1, #drawingOrder2 do
+        local index = drawingOrder2[i].index
+        local orders = drawingOrder2[i].order
+        local rnkk = rinnkaku[index]
 
-        local side = sides[drawingOrder[i]]
-        obj.drawpoly(
-            side.x0, side.y0, 0
-            , side.x1, side.y1, 0
-            , side.x2, side.y2, 0
-            , side.x3, side.y3, 0
-        )
+        for j = 1, #orders do
+            local x0 = rnkk[(orders[j] * 2) - 1]
+            local y0 = rnkk[(orders[j] * 2)]
+            local x1 = rnkk[(orders[j] * 2) % #rnkk + 1]
+            local y1 = rnkk[(orders[j] * 2) % #rnkk + 2]
+            local rad = math.atan2(y1 - y0, x1 - x0)
 
-        -- 辺
-        obj.load("figure", "円", "0xffffff", edgeWeight)
+            -- radius: x = 1, y = 0 から時計周り 0 <= radius <= 2pi
+            -- rad: x = -1, y = 0 から時計回り -pi <= rad <= pi
 
-        if (side.da < angleThreshold) then
-            goto continue
+            if (0 <= radius and radius < math.pi) then
+                -- 0～180度
+                if (radius - math.pi <= rad and rad <= radius) then
+                    goto continue
+                end
+            elseif (radius < math.pi * 2) then
+                -- 180～360度
+                local r = (rad + 2 * math.pi) % (2 * math.pi)
+                if (radius - math.pi <= r and r <= radius) then
+                    goto continue
+                end
+            end
+            -- 面
+            obj.load("figure", "四角形", "0x00aa00")
+
+            local x2 = distance * math.cos(radius) + x1
+            local y2 = distance * math.sin(radius) + y1
+            local x3 = distance * math.cos(radius) + x0
+            local y3 = distance * math.sin(radius) + y0
+
+            obj.drawpoly(
+                x0, y0, 0
+                , x1, y1, 0
+                , x2, y2, 0
+                , x3, y3, 0
+            )
+
+            -- 辺
+            obj.load("figure", "円", "0xffffff", edgeWeight)
+
+            -- 前の辺に対して現在の辺がほぼ平行（ほぼ直線）の場合、縁取りしない。
+--            if (side.da < angleThreshold) then
+--                goto continue
+--            end
+
+            -- 辺の始点から縁取りを描画
+            for j = 0, distance do
+                obj.ox = ((x3 - x0) * j / distance) + x0
+                obj.oy = ((y3 - y0) * j / distance) + y0
+                obj.draw()
+            end
+
+            ::continue::
         end
-
-        for j = 0, distance do
-            obj.ox = ((side.x3 - side.x0) * j / distance) + side.x0
-            obj.oy = ((side.y3 - side.y0) * j / distance) + side.y0
-            obj.draw()
-        end
-
-        ::continue::
     end
 end
 
@@ -495,7 +431,6 @@ end
 
 -- 拡張面_縁取り
 local function drawExEdge()
-
     obj.load("figure", "円", "0xffffff", edgeWeight)
     for i = 1, numOutlines do
         for j = 1, numPointsEachOutlines[i] do
@@ -514,26 +449,84 @@ local function drawExEdge()
     end
 end
 
-local function debugPrintSortedDrawingOrder()
-    for i = 1, table.getn(drawingOrder) do
-        local side = sides[drawingOrder[i]]
+drawBaseEdge()
+drawSide2()
+if (obj.check0) then
+    drawExSurface()
+end
+drawExEdge()
 
-        obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
-        local x = side.x0
-        local y = side.y0
-        obj.load("text", i.."["..drawingOrder[i].."]")
-        obj.draw(x, y)
+-- 輪郭番号の表示
+if (displayOutlineNo == 1) then
+    obj.setfont("ＭＳ ゴシック", 30, 0, "0xff0000")
+    for i = 1, #rinnkaku do
+        obj.load("text", "["..i.."]")
+        obj.draw(rinnkaku[i][1], rinnkaku[i][2])
     end
 end
 
-drawBaseEdge()
---drawSide()
---drawSideEdge()
-drawSide2()
-drawExSurface()
-drawExEdge()
---debugPoints()
---debugPrintSortedDrawingOrder()
---debugPrintOriginalDrawingOrder()
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
 
-debug_print("==")
+-- オリジナルの描画順を表示する。
+local function dubugDrawOriginalDrawingOrder()
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0xff0000")
+    obj.load("text", "●")
+    obj.draw(0, 0)
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0x0000ff")
+    obj.load("text", "●")
+    obj.draw(w, h)
+    obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
+    for i = 1, #drawingOrder2 do
+        local index = drawingOrder2[i].index
+        local orders = drawingOrder2[i].order
+        local rnkk = rinnkaku[index]
+
+        for j = 1, #orders do
+            local x = rnkk[j * 2 - 1]
+            local y = rnkk[j * 2]
+            obj.load("text", i.."-"..j)
+            obj.draw(x, y)
+        end
+    end
+end
+
+-- ソート済みの描画順を表示する。
+local function debugDrawSortedDrawingOrder()
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0xff0000")
+    obj.load("text", "●")
+    obj.draw(0, 0)
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0x0000ff")
+    obj.load("text", "●")
+    obj.draw(w, h)
+    obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
+    for i = 1, #drawingOrder2 do
+        local index = drawingOrder2[i].index
+        local orders = drawingOrder2[i].order
+        local rnkk = rinnkaku[index]
+
+        for j = 1, #orders do
+            local x = rnkk[(orders[j] * 2) - 1]
+            local y = rnkk[(orders[j] * 2)]
+            obj.load("text", i.."-"..j)
+            obj.draw(x, y)
+        end
+    end
+end
+
+if (debugno == 1) then
+    dubugDrawOriginalDrawingOrder()
+elseif (debugno == 2) then
+    debugDrawSortedDrawingOrder()
+elseif (debugno == 3) then
+    debugPrintAndDrawLineDetection(correctedLines)
+end
+
+debug_print("===================")
+debug_print("== スクリプト終了 ==")
+debug_print("===================")
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================
