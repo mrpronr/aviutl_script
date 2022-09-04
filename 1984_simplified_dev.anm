@@ -1,7 +1,6 @@
 --track0:‹——£,0,500,50
 --track1:‰‚Ì‘¾‚³,1,50,5,1
---track2:Šp“x,0,5000,45,0.1
---track3:‹È–Êè‡’l,0,359,10,0.01
+--track2:‹È–Êè‡’l,0,359,1,0.01
 --check0:Šg’£–Ê•\¦,0
 --dialog:’¸“_è‡’l,local apexThreshold=3;—ÖŠs”Ô†•\¦/chk,local displayOutlineNo=0;ŠO˜g:1 “à˜g:2,local outOrIn={};ƒfƒoƒbƒO—p,local debugno=0;
 
@@ -93,9 +92,7 @@ end
 
 local distance = obj.track0
 local edgeWeight = obj.track1
-local angle = obj.track2 % 360
-local radius = math.rad(angle)
-local angleThreshold = obj.track3
+local angleThreshold = obj.track2
 
 local w, h = obj.getpixel()
 local offsetX = w / 2
@@ -107,6 +104,7 @@ local baseY = obj.oy
 
 local PI = math.pi
 local PI2 = 2 * PI
+local PI_HALF = 1 / 2 * PI
 
 require("rikky_module")
 
@@ -157,7 +155,7 @@ for i = 1, numLines do
         end
         ::continue::
     end
---    debugPrintLines(correctedLines, "correctedLines")
+    debugPrintLines(correctedLines, "correctedLines")
 end
 
 -- •Ó‚Æ•Ó‚ğÚ‘±‚µ‚½Špƒf[ƒ^‚ğì¬
@@ -202,23 +200,6 @@ local function lsls()
     for i = 1, #concatedLines do
         local x = concatedLines[i][3]
         local y = concatedLines[i][4]
-        if (0 <= radius and radius < PI * (1/2)) then
-            -- 0`90“x‚Ìê‡AŠeÀ•W‚ğŒ´“_‚Ì‰E‰º‚ÉƒVƒtƒgiÅ‰‚©‚ç‰E‰ºj
-            x = x
-            y = y
-        elseif (PI * (1/2) <= radius and radius < PI) then
-            -- 90`180“x‚Ìê‡AŠeÀ•W‚ğŒ´“_‚Ì¶‰º‚ÉƒVƒtƒg
-            x = x - w
-            y = y
-        elseif (PI <= radius and radius < PI * (3/2)) then
-            -- 180`270“x‚Ìê‡AŠeÀ•W‚ğŒ´“_‚Ì¶ã‚ÉƒVƒtƒg
-            x = x - w
-            y = y - h
-        elseif (PI * (3/2) <= radius and radius < PI2) then
-            -- 270`360“x‚Ìê‡AŠeÀ•W‚ğŒ´“_‚Ì‰Eã‚ÉƒVƒtƒg
-            x = x
-            y = y - h
-        end
         local r = math.sqrt(x * x + y * y)
         table.insert(rs, {i = i, r = r})
     end
@@ -227,11 +208,11 @@ local function lsls()
         debug_print("rs:"..rs[i].i..","..rs[i].r)
     end
 
-    -- Œ´“_‚©‚ç‰“‚¢‡‚É•`‰æ‡‚ğİ’è
+    -- Œ´“_‚©‚ç‹ß‚¢‡‚É•`‰æ‡‚ğİ’è
     table.sort(
         rs
         , function(a, b)
-            return a.r > b.r
+            return a.r < b.r
         end
     )
 
@@ -245,7 +226,7 @@ debugPrintArray(drawingOrder2, "drawingOrder2")
 
 -- Šî€–Ê_‰æ‚è
 local function drawBaseEdge()
-    obj.load("figure", "‰~", "0xffffff", edgeWeight)
+    obj.load("figure", "‰~", "0xffffff", edgeWeight + 2)
 
     for i = 1, numOutlines do
         for j = 1, numPointsEachOutlines[i] do
@@ -257,8 +238,6 @@ local function drawBaseEdge()
 end
 
 --drawBaseEdge()
-
---jjj()
 
 -- ‰æ‚è_Šî€–Ê‚ÆŠg’£–Ê‚ğŒq‚®•Ó
 
@@ -274,30 +253,29 @@ local function drawSide2()
         local y1 = concatedLine[4]
         local x2 = concatedLine[5]
         local y2 = concatedLine[6]
-        local x1d = distance * math.cos(radius) + x1
-        local y1d = distance * math.sin(radius) + y1
-        local x2d = distance * math.cos(radius) + x2
-        local y2d = distance * math.sin(radius) + y2
+        local x1d = x1
+        local y1d = -distance + y1
+        local x2d = x2
+        local y2d = -distance + y2
         local rad1 = math.atan2(y1 - y0, x1 - x0)
         local rad2 = math.atan2(y2 - y1, x2 - x1)
 
-        -- radius: x = 1, y = 0 ‚©‚çŒvü‚è 0 <= radius <= 2pi
-        -- rad: x = -1, y = 0 ‚©‚çŒv‰ñ‚è -pi <= rad <= pi
+        -- rad:
+        -- x = -1, y =  0 -> -ƒÎ
+        -- x =  0, y =  1 -> -1/2ƒÎ
+        -- x =  1, y =  0 ->  0
+        -- x =  0, y = -1 ->  ƒÎ
 
         -- ‘¤–Ê‚ğ•`‰æ‚·‚é‚©‚µ‚È‚¢‚©”»’è‚·‚é
         -- @return •`‰æ‚·‚é:true, •`‰æ‚µ‚È‚¢:false
         local function sholdDrawSurface()
-            if (0 <= radius and radius < PI) then
-                -- 0`180“x
-                if (radius - PI <= rad2 and rad2 <= radius) then
-                    return false
-                end
-            elseif (radius < PI2) then
-                -- 180`360“x
-                local r = (rad2 + PI2) % PI2
-                if (radius - PI <= r and r <= radius) then
-                    return false
-                end
+            -- TODO: Œ©‚¦‚È‚¢–Ê‚Í”ñ•\¦B—ÖŠs‚ªŠO‘¤‚©“à‘¤‚©‚Åˆ—‚ğ”½‘Î‚É‚·‚é•K—v‚ ‚èB
+            if ((PI_HALF <= rad1) and (rad1 <= PI)) then
+                return false
+            end
+
+            if ((-PI <= rad1) and (rad1 <= -PI_HALF)) then
+                return false
             end
 
             return true
@@ -308,197 +286,70 @@ local function drawSide2()
         -- ‚â‚Á‚Ä‚¢‚é‚±‚Æ‚Í‚Q‚Â
         -- [1]•½‚ç‚È‚Ì‚É•\¦‚³‚ê‚é•Ó‚ğ‰æ‚è‚·‚é‚©‚µ‚È‚¢‚©”»’è
         -- [2]Šî€–Ê‚É‘Î‚·‚éŠg’£–Ê‚ÌŠp“xAÚ‚µ‚Ä‚¢‚é•Ó‚Q‚Â‚ÌŠp“x‚ÌŒv‚R‚Â‚ÌŠp“x‚©‚ç‰æ‚è‚·‚é‚©‚µ‚È‚¢‚©”»’è
+        -- [3]
         --
         -- @return ‰æ‚è‚·‚é:true, ‰æ‚è‚µ‚È‚¢:false
         local function shouldDrawLine()
 
+            local threshold = 0.01745 * 4
+            if (PI_HALF - threshold <= rad1 and rad1 <= PI_HALF + threshold) then
+                return true
+            elseif (-PI_HALF - threshold <= rad1 and rad1 <= -PI_HALF + threshold) then
+                return true
+            end
+
+            -- [1]
             -- ‘O‚Ì•Ó‚É‘Î‚µ‚ÄŒ»İ‚Ì•Ó‚ª‚Ù‚Ú•½si‚Ù‚Ú’¼üj‚Ìê‡A‰æ‚è‚µ‚È‚¢B
             if (math.abs(rad2 - rad1) < angleThreshold) then
                 return false
             end
 
-            -- 0`90“x «
-            if (0 <= radius and radius < PI / 2) then
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ «
-                if ((radius - PI <= rad1) and (rad1 <= radius)) then
-                    -- rad1 = 0`radius «
-                    if (rad1 >= 0) then
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    -- rad1 = 0`radius ª
-                    -- rad1 = radius-ƒÎ`-1/2ƒÎ, -1/2ƒÎ`0 «
-                    else
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 + PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
+            -- [2]
+            -- -1/2ƒÎ‚ÌŒv‰ñ‚è‘¤ «
+            if ((-PI_HALF <= rad1) and (rad1 <= PI_HALF)) then
+debug_print("here1")
+                -- rad1 = 0`1/2ƒÎ «
+                if (rad1 >= 0) then
+debug_print("1")
+                    if not((rad1 - PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
                     end
-                    -- rad1 = radius-ƒÎ`-1/2ƒÎ, -1/2ƒÎ`0 ª
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ ª
-                -- radius‚ÌŒv‰ñ‚è‘¤ «
+                -- rad1 = 0`1/2ƒÎ ª
+                -- rad1 = -1/2ƒÎ`0 «
                 else
-                    -- rad1 = -ƒÎ`radius-ƒÎ «
-                    if (rad1 >= 0) then
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 - PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
-                    -- rad1 = -ƒÎ`radius-ƒÎ ª
-                    -- rad1 = radius`1/2ƒÎ, 1/2ƒÎ`ƒÎ «
-                    else
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 + PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
+debug_print("2")
+                    if ((PI_HALF <= rad2) and (rad2 <= rad1 + PI)) then
+                        return false
                     end
-                    -- rad1 = radius`1/2ƒÎ, 1/2ƒÎ`ƒÎ ª
                 end
-                -- radius‚ÌŒv‰ñ‚è‘¤ ª
-            -- 0`90“x ª
-            -- 90`180“x «
-            elseif (radius < PI) then
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ «
-                if ((radius - PI <= rad1) and (rad1 <= radius)) then
-                    -- rad1 = 0`1/2ƒÎ, 1/2ƒÎ`radius «
-                    if (rad1 >= 0) then
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 + PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
-                    -- rad1 = 0`1/2ƒÎ, 1/2ƒÎ`radius ª
-                    -- rad1 = radius-ƒÎ`0 «
-                    else
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
+                -- rad1 = -1/2ƒÎ`0 ª
+            -- -1/2ƒÎ‚ÌŒv‰ñ‚è‘¤ ª
+            -- -1/2ƒÎ‚Ì”½Œv‰ñ‚è‘¤ «
+            else
+debug_print("here2")
+                -- rad1 = 1/2ƒÎ`ƒÎ «
+                if (rad1 >= 0) then
+debug_print("3")
+                    if not((rad1 - PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
                     end
-                    -- rad1 = radius-ƒÎ`0 ª
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ ª
-                -- radius‚ÌŒv‰ñ‚è‘¤ «
+                -- rad1 = 1/2ƒÎ`ƒÎ ª
+                -- rad1 = -ƒÎ`-1/2ƒÎ «
                 else
-                    -- rad1 = -ƒÎ`-1/2ƒÎ, -1/2ƒÎ`radius-ƒÎ «
-                    if (rad1 <= 0) then
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 + PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
-                    -- rad1 = -ƒÎ`-1/2ƒÎ, -1/2ƒÎ`radius-ƒÎ ª
-                    -- rad1 = radius`ƒÎ «
-                    else
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 - PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
+debug_print("4")
+                    if not((rad1 + PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
                     end
-                    -- rad1 = radius`ƒÎ ª
                 end
-                -- radius‚ÌŒv‰ñ‚è‘¤ ª
-            -- 90`180“x ª
-            -- 180`270“x «
-            elseif (radius < PI * 3/2) then
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ «
-                if (((radius - PI <= rad1) and (rad1 <= PI))
-                    or ((-PI <= rad1) and (rad1 <= radius - PI2))
-                ) then
-                    -- rad1 = -ƒÎ`radius-2ƒÎ «
-                    if (rad1 >= 0) then
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    -- rad1 = -ƒÎ`radius-2ƒÎ ª
-                    -- rad1 = radius-ƒÎ`1/2ƒÎ, 1/2ƒÎ`ƒÎ «
-                    else
-                        if not((rad1 + PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    end
-                    -- rad1 = radius1-ƒÎ`1/2ƒÎ, 1/2ƒÎ`ƒÎ ª
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ ª
-                -- radius‚ÌŒv‰ñ‚è‘¤ «
-                else
-                    -- rad1 = 0`radisu-ƒÎ «
-                    if (rad1 >= 0) then
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    -- rad1 = 0`radisu-ƒÎ ª
-                    -- rad1 = radius-2ƒÎ`-1/2ƒÎ, -1/2ƒÎ`0 «
-                    else
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 + PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
-                    end
-                    -- rad1 = radius-2ƒÎ`-1/2ƒÎ, -1/2ƒÎ`0 ª
-                end
-                -- radius‚ÌŒv‰ñ‚è‘¤ ª
-            -- 180`270“x ª
-            -- 270`360“x «
-            elseif (radius < PI2) then
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ «
-                if (
-                    ((radius - PI <= rad1) and (rad1 <= PI))
-                    or (-PI <= rad1) and (rad1 <= radius - PI2)
-                ) then
-                    -- rad1 = radius-ƒÎ`ƒÎ «
-                    if (rad1 >= 0) then
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    -- rad1 = radius-ƒÎ`ƒÎ ª
-                    -- rad1 = -ƒÎ`-1/2ƒÎ, -1/2ƒÎ`radius-2ƒÎ «
-                    else
-                        if not(
-                            ((rad1 + PI <= rad2) and (rad2 <= radius - PI))
-                        ) then
-                            return false
-                        end
-                    end
-                    -- rad1 = -ƒÎ`-1/2ƒÎ, -1/2ƒÎ`radius-2ƒÎ ª
-                -- radius‚Ì”½Œv‰ñ‚è‘¤ ª
-                -- radius‚ÌŒv‰ñ‚è‘¤ «
-                else
-                    -- rad1 = 0`1/2ƒÎ, 1/2ƒÎ`radius-ƒÎ «
-                    if (rad1 >= 0) then
-                        if not((rad1 - PI <= rad2) and (rad2 <= radius - PI)) then
-                            return false
-                        end
-                    -- rad1 = 0`1/2ƒÎ, 1/2ƒÎ`radius-ƒÎ ª
-                    -- rad1 = radius-2ƒÎ`0 «
-                    else
-                        if not(
-                            ((-PI <= rad2) and (rad2 <= radius - PI))
-                            or ((rad1 - PI <= rad2) and (rad2 <= PI))
-                        ) then
-                            return false
-                        end
-                    end
-                    -- rad1 = radius-2ƒÎ`0 ª
-                end
-                -- radius‚ÌŒv‰ñ‚è‘¤ ª
+                -- rad1 = -ƒÎ`-1/2ƒÎ ª
             end
-            -- 270`360“x ª
+            -- -1/2ƒÎ‚Ì”½Œv‰ñ‚è‘¤ ª
 
             return true
         end
 
         -- –Ê
-        if (sholdDrawSurface()) then
+--        if (sholdDrawSurface()) then
             obj.load("figure", "lŠpŒ`", "0x00aa00")
             obj.drawpoly(
                 x1, y1, 0
@@ -506,7 +357,7 @@ local function drawSide2()
                 , x2d, y2d, 0
                 , x1d, y1d, 0
             )
-        end
+--        end
 
         -- •Ó
         if (shouldDrawLine()) then
@@ -525,8 +376,8 @@ end
 local function drawExSurface()
     obj.copybuffer("obj", "cache:img")
 
-    obj.ox = distance * math.cos(radius) + offsetX
-    obj.oy = distance * math.sin(radius) + offsetY
+    obj.ox = offsetX
+    obj.oy = -distance + offsetY
     obj.draw()
 end
 
@@ -542,7 +393,7 @@ local function drawExEdge()
             local dx = exX - x
             local dy = exY - y
             -- dy‚Ì‚ªí‚É0‚Å‚È‚º‚¤‚Ü‚­‚¢‚­H
-            local r = math.atan2(0, dx) + radius
+            local r = math.atan2(0, dx) + 3/2 * PI
             obj.ox = math.cos(r) * distance + x + offsetX
             obj.oy = math.sin(r) * distance + y + offsetY
             obj.draw()
