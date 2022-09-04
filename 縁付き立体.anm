@@ -1,0 +1,89 @@
+--track0:‹——£,0,200,20
+--track1:‰_‘¾‚³,0,20,3,1
+--track2:—ÖØ‚è_ŠÔŠu,1,30,1,1
+--track3:—ÖØ‚è_‘¾‚³,1,20,1,1
+--check0:Šg’£–Ê•\¦,1
+--dialog:—ÖØ‚è_•`‰æ}Œ`,shape="lŠpŒ`";‰F/col,edgeColor="0x222222";‘¤–ÊF/col,sideColor="0xf5f5f5";
+
+local distance = obj.track0
+local edgeWeight = obj.track1
+local interval = obj.track2
+local weightRouncSlice = obj.track3
+local shouldDrawExPlane = obj.check0
+
+local w, h = obj.getpixel()
+local offsetX = w / 2
+local offsetY = h / 2
+
+obj.copybuffer("cache:img", "obj")
+
+require("rikky_module")
+
+-- —ÖŠsî•ñ
+pointsEachOutlines, numPointsEachOutlines, numOutlines = rikky_module.bordering()
+
+-- Šî€–Ê_‰æ‚è
+local function drawBaseEdge()
+    obj.load("figure", "OŠpŒ`", edgeColor, edgeWeight)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            obj.oy = pointsEachOutlines[i][j*2] + offsetY + edgeWeight / 2
+            obj.draw()
+        end
+    end
+end
+
+-- ‘¤–Ê
+local function drawSide2()
+    obj.load("figure", shape, sideColor, weightRouncSlice)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            local y = pointsEachOutlines[i][j*2]
+            for k = 0, distance, interval do
+                obj.oy = y + offsetY - k
+                obj.draw()
+            end
+        end
+    end
+end
+
+-- Šg’£–Ê_–Ê
+local function drawExPlane()
+    obj.copybuffer("obj", "cache:img")
+
+    obj.ox = offsetX
+    obj.oy = -distance + offsetY
+    obj.draw()
+end
+
+-- Šg’£–Ê_‰æ‚è
+local function drawExEdge()
+    obj.load("figure", "OŠpŒ`", edgeColor, edgeWeight)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            obj.oy = pointsEachOutlines[i][j*2] + offsetY - distance
+            obj.draw()
+        end
+    end
+end
+
+-- Šî€–Ê
+if (shouldDrawOriginalPlane == 1) then
+    drawOriginalPlane()
+end
+-- Šî€‰
+drawBaseEdge()
+-- ‘¤–Ê
+drawSide2()
+-- Šg’£–Ê
+if (shouldDrawExPlane) then
+    drawExPlane()
+end
+-- Šg’£‰
+drawExEdge()
