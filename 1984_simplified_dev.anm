@@ -1,0 +1,474 @@
+--track0:距離,0,500,50
+--track1:縁の太さ,1,50,5,1
+--track2:曲面閾値,0,359,1,0.01
+--check0:拡張面表示,0
+--dialog:頂点閾値,local apexThreshold=3;輪郭番号表示/chk,local displayOutlineNo=0;外枠:1 内枠:2,local outOrIn={};デバッグ用,local debugno=0;
+
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
+
+debug_print("===================")
+debug_print("== スクリプト開始 ==")
+debug_print("===================")
+
+-- 一次元配列用
+-- @param a 一次元配列
+-- @param name 配列名
+local function debugPrintArray(a, name)
+    debug_print("== debugPrintArray("..name..") ↓ ==")
+    for i = 1, #a do
+        debug_print("i="..i..", value="..a[i])
+    end
+    debug_print("== debugPrintArray("..name..") ↑ ==")
+end
+
+-- 二次元配列用
+-- @param a 二次元配列
+local function debugPrintNestedArray(a, name)
+    debug_print("== debugPrintNestedArray("..name..") ↓ ==")
+    for i = 1, #a do
+        for j = 1, #a[i] do
+            debug_print("i="..i..", j="..j..", value="..a[i][j])
+        end
+    end
+    debug_print("== debugPrintNestedArray("..name..") ↑ ==")
+end
+
+-- 輪郭情報
+-- @param outlines 輪郭[[x0, y0, x1, y1, x2, y2, ...], [], ...]
+-- @param name 輪郭名
+function debugPrintOutlines(outlines, name)
+    debug_print("== 輪郭座標（"..name.."）↓ ==")
+    for i = 1, #outlines do
+        local n = #outlines[i]
+        for j = 1, n / 2 do
+            debug_print("i="..i..", j="..j..", x="..outlines[i][j*2-1]..", y="..outlines[i][j*2])
+        end
+    end
+    debug_print("== 輪郭座標（"..name.."）↑ ==")
+end
+
+-- 辺情報
+-- @param lines 辺[{x0, y0, x1, y1}, {}, ...]
+local function debugPrintAndDrawLineDetection(lines)
+    debug_print("== 辺座標 ↓ ==")
+    obj.setfont("ＭＳ ゴシック", 14, 0, "0xff0000")
+    local yyy = 15
+    debug_print("#lines="..#lines)
+    for i = 1, #lines do
+        local x = lines[i].x0
+        local y = lines[i].y0
+        obj.load("text", i)
+        obj.draw(x, y)
+        obj.load("text", string.format("%.2f", x))
+        obj.draw(x, y + yyy)
+        obj.load("text", string.format("%.2f", y))
+        obj.draw(x, y + yyy * 2)
+        debug_print("i="..i..", x="..x..", y="..y)
+    end
+    debug_print("== 辺座標 ↑ ==")
+end
+
+-- 辺情報
+-- @param lines 辺[{x0, y0, x1, y1}, {}, ...]
+-- @param name 配列名
+local function debugPrintLines(lines, name)
+    debug_print("== 辺座標（"..name.."）↓ ==")
+    local n = #lines
+    debug_print("[debugSides()]n="..n)
+    for i = 1, n do
+        local edge = lines[i]
+        local x = edge.x0
+        local y = edge.y0
+        debug_print("x0="..x..", y0="..y)
+    end
+    debug_print("== 辺座標（"..name.."）↑ ==")
+end
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================
+
+local distance = obj.track0
+local edgeWeight = obj.track1
+local angleThreshold = obj.track2
+
+local w, h = obj.getpixel()
+local offsetX = w / 2
+local offsetY = h / 2
+
+obj.copybuffer("cache:img", "obj")
+local baseX = obj.ox
+local baseY = obj.oy
+
+local PI = math.pi
+local PI2 = 2 * PI
+local PI_HALF = 1 / 2 * PI
+
+require("rikky_module")
+
+-- 輪郭情報
+pointsEachOutlines, numPointsEachOutlines, numOutlines = rikky_module.bordering()
+
+-- 辺情報
+lines, numLines = rikky_module.linedetection(100)
+
+-- 辺の終点を近隣の辺の始点の値に設定
+-- {{x0, y0, x1, y1},{},...}
+local correctedLines = {}
+
+for i = 1, numLines do
+    local origin = lines[i]
+    local x0, y0 = origin.x0, origin.y0
+    local x1, y1 = origin.x1, origin.y1
+--    debug_print("x0:"..x0..", y0:"..y0..", x1:"..x1..", y1:"..y1)
+
+    for j = 1, numLines do
+        if (i == j) then
+            goto continue
+        end
+
+        local dest = lines[j]
+        local x2, y2 = dest.x0, dest.y0
+        local x3, y3 = dest.x1, dest.y1
+--        debug_print("x2:"..x2..", y2:"..y2..", x3:"..x3..", y3:"..y3)
+
+        -- おそらく各辺の始点と終点は輪郭の反時計回りに沿う形で取得できる。
+        -- つまり、始点同士・終点同士が重なることはない。多分…。
+--        debug_print("dx="..math.abs(x1 - x2))
+--        debug_print("dy="..math.abs(y1 - y2))
+        if ((math.abs(x1 - x2) < apexThreshold) and (math.abs(y1 - y2) < apexThreshold)) then
+--            debug_print("kkkkk")
+            local angleOrigin = math.deg(math.atan2(y1 - y0, x1 - x0))
+            local angleDest = math.deg(math.atan2(y3 - y2, x3 - x2))
+            local da = math.abs(angleOrigin - angleDest) % 360
+
+            correctedLines[i] = {
+                x0 = x0
+                , y0 = y0
+                , x1 = x2
+                , y1 = y2
+            }
+
+            break
+        end
+        ::continue::
+    end
+    debugPrintLines(correctedLines, "correctedLines")
+end
+
+-- 辺と辺を接続した角データを作成
+-- [[x0, y0, x1, y1, x2, y2], [], ...]
+local concatedLines = {}
+
+local function concatLines()
+    for i = 1, #correctedLines do
+        local l1 = correctedLines[i]
+
+        for j = 1, #correctedLines do
+            if (i == j) then
+                goto continue
+            end
+
+            local l2 = correctedLines[j]
+
+            if (l1.x1 == l2.x0 and l1.y1 == l2.y0) then
+                table.insert(concatedLines, {
+                    l1.x0, l1.y0
+                    , l1.x1, l1.y1
+                    , l2.x1, l2.y1
+                })
+                break
+            end
+
+            ::continue::
+        end
+    end
+end
+concatLines()
+
+debugPrintNestedArray(concatedLines, "concatedLines")
+
+-- 側面描画順2
+-- [n1, n2, n3, ...]
+local drawingOrder2 = {}
+local function lsls()
+    -- [{i, r}, {}, ...]
+    local rs = {}
+
+    for i = 1, #concatedLines do
+        local x = concatedLines[i][3]
+        local y = concatedLines[i][4]
+        local r = math.sqrt(x * x + y * y)
+        table.insert(rs, {i = i, r = r})
+    end
+
+    for i = 1, #rs do
+        debug_print("rs:"..rs[i].i..","..rs[i].r)
+    end
+
+    -- 原点から近い順に描画順を設定
+    table.sort(
+        rs
+        , function(a, b)
+            return a.r < b.r
+        end
+    )
+
+    for i = 1, #rs do
+        table.insert(drawingOrder2, rs[i].i)
+    end
+end
+lsls()
+
+debugPrintArray(drawingOrder2, "drawingOrder2")
+
+-- 基準面_縁取り
+local function drawBaseEdge()
+    obj.load("figure", "円", "0xffffff", edgeWeight + 2)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            obj.oy = pointsEachOutlines[i][j*2] + offsetY
+            obj.draw()
+        end
+    end
+end
+
+--drawBaseEdge()
+
+-- 縁取り_基準面と拡張面を繋ぐ辺
+
+local function drawSide2()
+    for i = 1, #drawingOrder2 do
+        local concatedLine = concatedLines[drawingOrder2[i]]
+
+        debug_print("i="..i)
+
+        local x0 = concatedLine[1]
+        local y0 = concatedLine[2]
+        local x1 = concatedLine[3]
+        local y1 = concatedLine[4]
+        local x2 = concatedLine[5]
+        local y2 = concatedLine[6]
+        local x1d = x1
+        local y1d = -distance + y1
+        local x2d = x2
+        local y2d = -distance + y2
+        local rad1 = math.atan2(y1 - y0, x1 - x0)
+        local rad2 = math.atan2(y2 - y1, x2 - x1)
+
+        -- rad:
+        -- x = -1, y =  0 -> -π
+        -- x =  0, y =  1 -> -1/2π
+        -- x =  1, y =  0 ->  0
+        -- x =  0, y = -1 ->  π
+
+        -- 側面を描画するかしないか判定する
+        -- @return 描画する:true, 描画しない:false
+        local function sholdDrawSurface()
+            -- TODO: 見えない面は非表示。輪郭が外側か内側かで処理を反対にする必要あり。
+            if ((PI_HALF <= rad1) and (rad1 <= PI)) then
+                return false
+            end
+
+            if ((-PI <= rad1) and (rad1 <= -PI_HALF)) then
+                return false
+            end
+
+            return true
+        end
+
+        -- 側面を縁取るするかしないか判定する地獄の関数
+        --
+        -- やっていることは２つ
+        -- [1]平らなのに表示される辺を縁取りするかしないか判定
+        -- [2]基準面に対する拡張面の角度、接している辺２つの角度の計３つの角度から縁取りするかしないか判定
+        -- [3]
+        --
+        -- @return 縁取りする:true, 縁取りしない:false
+        local function shouldDrawLine()
+
+            local threshold = 0.01745 * 4
+            if (PI_HALF - threshold <= rad1 and rad1 <= PI_HALF + threshold) then
+                return true
+            elseif (-PI_HALF - threshold <= rad1 and rad1 <= -PI_HALF + threshold) then
+                return true
+            end
+
+            -- [1]
+            -- 前の辺に対して現在の辺がほぼ平行（ほぼ直線）の場合、縁取りしない。
+            if (math.abs(rad2 - rad1) < angleThreshold) then
+                return false
+            end
+
+            -- [2]
+            -- -1/2πの時計回り側 ↓
+            if ((-PI_HALF <= rad1) and (rad1 <= PI_HALF)) then
+debug_print("here1")
+                -- rad1 = 0～1/2π ↓
+                if (rad1 >= 0) then
+debug_print("1")
+                    if not((rad1 - PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
+                    end
+                -- rad1 = 0～1/2π ↑
+                -- rad1 = -1/2π～0 ↓
+                else
+debug_print("2")
+                    if ((PI_HALF <= rad2) and (rad2 <= rad1 + PI)) then
+                        return false
+                    end
+                end
+                -- rad1 = -1/2π～0 ↑
+            -- -1/2πの時計回り側 ↑
+            -- -1/2πの反時計回り側 ↓
+            else
+debug_print("here2")
+                -- rad1 = 1/2π～π ↓
+                if (rad1 >= 0) then
+debug_print("3")
+                    if not((rad1 - PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
+                    end
+                -- rad1 = 1/2π～π ↑
+                -- rad1 = -π～-1/2π ↓
+                else
+debug_print("4")
+                    if not((rad1 + PI <= rad2) and (rad2 <= PI_HALF)) then
+                        return false
+                    end
+                end
+                -- rad1 = -π～-1/2π ↑
+            end
+            -- -1/2πの反時計回り側 ↑
+
+            return true
+        end
+
+        -- 面
+--        if (sholdDrawSurface()) then
+            obj.load("figure", "四角形", "0x00aa00")
+            obj.drawpoly(
+                x1, y1, 0
+                , x2, y2, 0
+                , x2d, y2d, 0
+                , x1d, y1d, 0
+            )
+--        end
+
+        -- 辺
+        if (shouldDrawLine()) then
+            -- 辺の始点から縁取りを描画
+            obj.load("figure", "円", "0xffffff", edgeWeight)
+            for j = 0, distance do
+                obj.ox = ((x1d - x1) * j / distance) + x1
+                obj.oy = ((y1d - y1) * j / distance) + y1
+                obj.draw()
+            end
+        end
+    end
+end
+
+-- 拡張面
+local function drawExSurface()
+    obj.copybuffer("obj", "cache:img")
+
+    obj.ox = offsetX
+    obj.oy = -distance + offsetY
+    obj.draw()
+end
+
+-- 拡張面_縁取り
+local function drawExEdge()
+    obj.load("figure", "円", "0xffffff", edgeWeight)
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            local x = pointsEachOutlines[i][j*2-1]
+            local y = pointsEachOutlines[i][j*2]
+            local exX = pointsEachOutlines[i][j*2-1] + distance
+            local exY = pointsEachOutlines[i][j*2]
+            local dx = exX - x
+            local dy = exY - y
+            -- dyのが常に0でなぜうまくいく？
+            local r = math.atan2(0, dx) + 3/2 * PI
+            obj.ox = math.cos(r) * distance + x + offsetX
+            obj.oy = math.sin(r) * distance + y + offsetY
+            obj.draw()
+        end
+    end
+end
+
+drawBaseEdge()
+drawSide2()
+
+if (obj.check0) then
+    drawExSurface()
+end
+drawExEdge()
+
+-- 輪郭番号の表示
+if (displayOutlineNo == 1) then
+    obj.setfont("ＭＳ ゴシック", 30, 0, "0xff0000")
+    for i = 1, #rinnkaku do
+        obj.load("text", "["..i.."]")
+        obj.draw(rinnkaku[i][1], rinnkaku[i][2])
+    end
+end
+
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
+
+-- オリジナルの描画順を表示する。
+local function dubugDrawOriginalDrawingOrder()
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0xff0000")
+    obj.load("text", "●")
+    obj.draw(0, 0)
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0x0000ff")
+    obj.load("text", "●")
+    obj.draw(w, h)
+    obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
+    for i = 1, #concatedLines do
+        local x = concatedLines[i][3]
+        local y = concatedLines[i][4]
+        obj.load("text", i)
+        obj.draw(x, y)
+    end
+end
+
+-- ソート済みの描画順を表示する。
+local function debugDrawSortedDrawingOrder()
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0xff0000")
+    obj.load("text", "●")
+    obj.draw(0, 0)
+    obj.setfont("ＭＳ ゴシック", 20, 0, "0x0000ff")
+    obj.load("text", "●")
+    obj.draw(w, h)
+    obj.setfont("ＭＳ ゴシック", 16, 0, "0xff0000")
+    for i = 1, #concatedLines do
+        local order = drawingOrder2[i]
+        local x = concatedLines[order][3]
+        local y = concatedLines[order][4]
+        obj.load("text", i)
+        obj.draw(x, y)
+    end
+end
+
+if (debugno == 1) then
+    dubugDrawOriginalDrawingOrder()
+elseif (debugno == 2) then
+    debugDrawSortedDrawingOrder()
+elseif (debugno == 3) then
+    debugPrintAndDrawLineDetection(correctedLines)
+end
+
+debug_print("===================")
+debug_print("== スクリプト終了 ==")
+debug_print("===================")
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================

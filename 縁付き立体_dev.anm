@@ -1,0 +1,165 @@
+--track0:距離,0,200,20
+--track1:縁_太さ,0,20,3,1
+--track2:輪切り_間隔,1,30,1,1
+--track3:輪切り_太さ,1,20,1,1
+--check0:拡張面表示,1
+--dialog:輪切り_描画図形,shape="四角形";縁色/col,edgeColor="0x222222";側面色/col,sideColor="0xf5f5f5";基準面表示/chk,shouldDrawOriginalPlane=0;
+
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
+
+debug_print("===================")
+debug_print("== スクリプト開始 ==")
+debug_print("===================")
+
+-- 一次元配列用
+-- @param a 一次元配列
+-- @param name 配列名
+local function debugPrintArray(a, name)
+    debug_print("== debugPrintArray("..name..") ↓ ==")
+    for i = 1, #a do
+        debug_print("i="..i..", value="..a[i])
+    end
+    debug_print("== debugPrintArray("..name..") ↑ ==")
+end
+
+-- 二次元配列用
+-- @param a 二次元配列
+local function debugPrintNestedArray(a, name)
+    debug_print("== debugPrintNestedArray("..name..") ↓ ==")
+    for i = 1, #a do
+        for j = 1, #a[i] do
+            debug_print("i="..i..", j="..j..", value="..a[i][j])
+        end
+    end
+    debug_print("== debugPrintNestedArray("..name..") ↑ ==")
+end
+
+-- 輪郭情報
+-- @param outlines 輪郭[[x0, y0, x1, y1, x2, y2, ...], [], ...]
+-- @param name 輪郭名
+function debugPrintOutlines(outlines, name)
+    debug_print("== 輪郭座標（"..name.."）↓ ==")
+    for i = 1, #outlines do
+        local n = #outlines[i]
+        for j = 1, n / 2 do
+            debug_print("i="..i..", j="..j..", x="..outlines[i][j*2-1]..", y="..outlines[i][j*2])
+        end
+    end
+    debug_print("== 輪郭座標（"..name.."）↑ ==")
+end
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================
+
+local distance = obj.track0
+local edgeWeight = obj.track1
+local interval = obj.track2
+local weightRouncSlice = obj.track3
+local shouldDrawExPlane = obj.check0
+
+local w, h = obj.getpixel()
+local offsetX = w / 2
+local offsetY = h / 2
+
+obj.copybuffer("cache:img", "obj")
+local baseX = obj.ox
+local baseY = obj.oy
+
+local PI = math.pi
+local PI2 = 2 * PI
+local PI_HALF = 1 / 2 * PI
+
+require("rikky_module")
+
+-- 輪郭情報
+pointsEachOutlines, numPointsEachOutlines, numOutlines = rikky_module.bordering()
+
+-- 基準面_面
+local function drawOriginalPlane()
+    obj.copybuffer("obj", "cache:img")
+
+--    obj.ox = offsetX
+--    obj.oy = -offsetY
+    obj.draw()
+end
+
+-- 基準面_縁取り
+local function drawBaseEdge()
+    obj.load("figure", "三角形", edgeColor, edgeWeight)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            obj.oy = pointsEachOutlines[i][j*2] + offsetY + edgeWeight / 2
+            obj.draw()
+        end
+    end
+end
+
+-- 側面
+local function drawSide2()
+    obj.load("figure", shape, sideColor, weightRouncSlice)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            local y = pointsEachOutlines[i][j*2]
+            for k = 0, distance, interval do
+                obj.oy = y + offsetY - k
+                obj.draw()
+            end
+        end
+    end
+end
+
+-- 拡張面_面
+local function drawExPlane()
+    obj.copybuffer("obj", "cache:img")
+
+    obj.ox = offsetX
+    obj.oy = -distance + offsetY
+    obj.draw()
+end
+
+-- 拡張面_縁取り
+local function drawExEdge()
+    obj.load("figure", "三角形", edgeColor, edgeWeight)
+
+    for i = 1, numOutlines do
+        for j = 1, numPointsEachOutlines[i] do
+            obj.ox = pointsEachOutlines[i][j*2-1] + offsetX
+            obj.oy = pointsEachOutlines[i][j*2] + offsetY - distance
+            obj.draw()
+        end
+    end
+end
+
+-- 基準面
+if (shouldDrawOriginalPlane == 1) then
+    drawOriginalPlane()
+end
+-- 基準縁
+drawBaseEdge()
+-- 側面
+drawSide2()
+-- 拡張面
+if (shouldDrawExPlane) then
+    drawExPlane()
+end
+-- 拡張縁
+drawExEdge()
+
+-- ====================
+-- == デバッグ用 ↓
+-- ====================
+
+debug_print("===================")
+debug_print("== スクリプト終了 ==")
+debug_print("===================")
+
+-- ====================
+-- == デバッグ用 ↑
+-- ====================
